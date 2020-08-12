@@ -174,15 +174,25 @@ public class SpringMvcContract extends Contract.BaseContract
 		if (clz.getInterfaces().length == 0) {
 			RequestMapping classAnnotation = findMergedAnnotation(clz,
 					RequestMapping.class);
-			if (classAnnotation != null) {
+//			if (classAnnotation != null) {
+//				// Prepend path from class annotation if specified
+//				if (classAnnotation.value().length > 0) {
+//					String pathValue = emptyToNull(classAnnotation.value()[0]);
+//					pathValue = resolve(pathValue);
+//	    			if (!pathValue.startsWith("/")) {
+//						pathValue = "/" + pathValue;
+//					}
+//   				data.template().uri(pathValue);
+//				}
+//			}
+			if (classAnnotation != null && classAnnotation.value().length > 0) {
 				// Prepend path from class annotation if specified
-				if (classAnnotation.value().length > 0) {
-					String pathValue = emptyToNull(classAnnotation.value()[0]);
+				String pathValue = emptyToNull(classAnnotation.value()[0]);
+				if (pathValue != null) {
 					pathValue = resolve(pathValue);
-					if (!pathValue.startsWith("/")) {
-						pathValue = "/" + pathValue;
+					if (!pathValue.equals("/")) {
+						data.template().uri(pathValue);
 					}
-					data.template().uri(pathValue);
 				}
 			}
 		}
@@ -243,10 +253,13 @@ public class SpringMvcContract extends Contract.BaseContract
 			if (pathValue != null) {
 				pathValue = resolve(pathValue);
 				// Append path from @RequestMapping if value is present on method
-				if (!pathValue.startsWith("/") && !data.template().path().endsWith("/")) {
-					pathValue = "/" + pathValue;
+//				if (!pathValue.startsWith("/") && !data.template().path().endsWith("/")) {
+//					pathValue = "/" + pathValue;
+//				}
+//				data.template().uri(pathValue, true);
+				if (!pathValue.equals("/")) {
+					data.template().uri(pathValue, true);
 				}
-				data.template().uri(pathValue, true);
 			}
 		}
 

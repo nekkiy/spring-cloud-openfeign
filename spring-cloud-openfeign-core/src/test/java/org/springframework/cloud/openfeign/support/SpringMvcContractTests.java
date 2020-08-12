@@ -31,8 +31,11 @@ import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import feign.MethodMetadata;
 import feign.Param;
+import junitparams.JUnitParamsRunner;
+import junitparams.Parameters;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
 import org.springframework.cloud.openfeign.CollectionFormat;
 import org.springframework.cloud.openfeign.SpringQueryMap;
@@ -72,6 +75,7 @@ import static org.junit.Assume.assumeTrue;
  * @author Artyom Romanenko
  * @author Olga Maciaszek-Sharma
  */
+@RunWith(JUnitParamsRunner.class)
 public class SpringMvcContractTests {
 
 	private static final Class<?> EXECUTABLE_TYPE;
@@ -599,6 +603,73 @@ public class SpringMvcContractTests {
 	}
 
 	@Test
+	public void testEmptySlash_withoutRoot() throws NoSuchMethodException {
+		Class clazz =TestTemplate_EmptySlashWithoutRoot.class;
+		Method method = clazz.getDeclaredMethod("rootWithSlash");
+		MethodMetadata data = contract
+			.parseAndValidateMetadata(method.getDeclaringClass(), method);
+
+		assertThat(data.template().url()).isEqualTo("/");
+	}
+
+	@Test
+	public void testEmpty_withoutRoot() throws NoSuchMethodException {
+		Class clazz =TestTemplate_EmptyWithoutRoot.class;
+		Method method = clazz.getDeclaredMethod("root");
+		MethodMetadata data = contract
+			.parseAndValidateMetadata(method.getDeclaringClass(), method);
+
+		assertThat(data.template().url()).isEqualTo("/");
+	}
+
+	private Class[] doubleMappingClassesProvider() {
+		return new Class[] { TestTemplate_RequestMapping_Empty_Class.class,
+			TestTemplate_RequestMapping_Empty_Method.class };
+	}
+
+	@Test
+	@Parameters(method = "doubleMappingClassesProvider")
+	public void testDoubleRequestMapping_root(Class clazz) throws NoSuchMethodException {
+		Method method = clazz.getDeclaredMethod("root");
+		MethodMetadata data = contract
+			.parseAndValidateMetadata(method.getDeclaringClass(), method);
+
+		assertThat(data.template().url()).isEqualTo("/");
+	}
+
+	@Test
+	@Parameters(method = "doubleMappingClassesProvider")
+	public void testDoubleRequestMapping_rootReverse(Class clazz)
+		throws NoSuchMethodException {
+		Method method = clazz.getDeclaredMethod("rootReverse");
+		MethodMetadata data = contract
+			.parseAndValidateMetadata(method.getDeclaringClass(), method);
+
+		assertThat(data.template().url()).isEqualTo("/");
+	}
+
+	@Test
+	@Parameters(method = "doubleMappingClassesProvider")
+	public void testDoubleRequestMapping_sub(Class clazz) throws NoSuchMethodException {
+		Method method = clazz.getDeclaredMethod("sub");
+		MethodMetadata data = contract
+			.parseAndValidateMetadata(method.getDeclaringClass(), method);
+
+		assertThat(data.template().url()).isEqualTo("/sub");
+	}
+
+	@Test
+	@Parameters(method = "doubleMappingClassesProvider")
+	public void testDoubleRequestMapping_subEmpty(Class clazz)
+		throws NoSuchMethodException {
+		Method method = clazz.getDeclaredMethod("subEmpty");
+		MethodMetadata data = contract
+			.parseAndValidateMetadata(method.getDeclaringClass(), method);
+
+		assertThat(data.template().url()).isEqualTo("/subEmpty");
+	}
+
+	@Test
 	public void testMultipleRequestPartAnnotations() throws NoSuchMethodException {
 		Method method = TestTemplate_RequestPart.class.getDeclaredMethod(
 				"requestWithMultipleParts", MultipartFile.class, String.class);
@@ -731,6 +802,54 @@ public class SpringMvcContractTests {
 
 		@RequestMapping(path = "/matrixVariable/{params}")
 		String matrixVariableNotNamed(@MatrixVariable Map<String, Object> params);
+
+	}
+
+	public interface TestTemplate_EmptySlashWithoutRoot {
+
+		@RequestMapping("/")
+		String rootWithSlash();
+
+	}
+
+	public interface TestTemplate_EmptyWithoutRoot {
+
+		@RequestMapping("")
+		String root();
+
+	}
+
+	@RequestMapping("")
+	public interface TestTemplate_RequestMapping_Empty_Class {
+
+		@RequestMapping("/")
+		String root();
+
+		@RequestMapping("")
+		String rootReverse();
+
+		@RequestMapping("/sub")
+		String sub();
+
+		@RequestMapping("subEmpty")
+		String subEmpty();
+
+	}
+
+	@RequestMapping("/")
+	public interface TestTemplate_RequestMapping_Empty_Method {
+
+		@RequestMapping("")
+		String root();
+
+		@RequestMapping("/")
+		String rootReverse();
+
+		@RequestMapping("/sub")
+		String sub();
+
+		@RequestMapping("subEmpty")
+		String subEmpty();
 
 	}
 
