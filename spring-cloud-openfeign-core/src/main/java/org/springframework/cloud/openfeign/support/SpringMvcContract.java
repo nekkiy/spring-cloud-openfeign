@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import feign.Contract;
 import feign.Feign;
@@ -36,12 +37,14 @@ import feign.Param;
 import feign.Request;
 
 import org.springframework.cloud.openfeign.AnnotatedParameterProcessor;
+import org.springframework.cloud.openfeign.CollectionFormat;
 import org.springframework.cloud.openfeign.annotation.MatrixVariableParameterProcessor;
 import org.springframework.cloud.openfeign.annotation.PathVariableParameterProcessor;
 import org.springframework.cloud.openfeign.annotation.QueryMapParameterProcessor;
 import org.springframework.cloud.openfeign.annotation.RequestHeaderParameterProcessor;
 import org.springframework.cloud.openfeign.annotation.RequestParamParameterProcessor;
 import org.springframework.cloud.openfeign.annotation.RequestPartParameterProcessor;
+import org.springframework.cloud.openfeign.encoding.HttpEncoding;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.ResourceLoaderAware;
 import org.springframework.core.DefaultParameterNameDiscoverer;
@@ -54,6 +57,8 @@ import org.springframework.core.convert.TypeDescriptor;
 import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -71,6 +76,8 @@ import static org.springframework.core.annotation.AnnotatedElementUtils.findMerg
  * @author Aram Peres
  * @author Olga Maciaszek-Sharma
  * @author Aaron Whiteside
+ * @author Artyom Romanenko
+ * @author Darren Foong
  */
 public class SpringMvcContract extends Contract.BaseContract
 		implements ResourceLoaderAware {
@@ -116,9 +123,9 @@ public class SpringMvcContract extends Contract.BaseContract
 		List<AnnotatedParameterProcessor> processors = getDefaultAnnotatedArgumentsProcessors();
 		processors.addAll(annotatedParameterProcessors);
 
-		this.annotatedArgumentProcessors = toAnnotatedArgumentProcessorMap(processors);
+		annotatedArgumentProcessors = toAnnotatedArgumentProcessorMap(processors);
 		this.conversionService = conversionService;
-		this.convertingExpanderFactory = new ConvertingExpanderFactory(conversionService);
+		convertingExpanderFactory = new ConvertingExpanderFactory(conversionService);
 	}
 
 	private static TypeDescriptor createTypeDescriptor(Method method, int paramIndex) {
@@ -183,7 +190,7 @@ public class SpringMvcContract extends Contract.BaseContract
 
 	@Override
 	public MethodMetadata parseAndValidateMetadata(Class<?> targetType, Method method) {
-		this.processedMethods.put(Feign.configKey(targetType, method), method);
+		processedMethods.put(Feign.configKey(targetType, method), method);
 		MethodMetadata md = super.parseAndValidateMetadata(targetType, method);
 
 		RequestMapping classAnnotation = findMergedAnnotation(targetType,
@@ -209,6 +216,12 @@ public class SpringMvcContract extends Contract.BaseContract
 	@Override
 	protected void processAnnotationOnMethod(MethodMetadata data,
 			Annotation methodAnnotation, Method method) {
+		if (CollectionFormat.class.isInstance(methodAnnotation)) {
+			CollectionFormat collectionFormat = findMergedAnnotation(method,
+					CollectionFormat.class);
+			data.template().collectionFormat(collectionFormat.value());
+		}
+
 		if (!RequestMapping.class.isInstance(methodAnnotation) && !methodAnnotation
 				.annotationType().isAnnotationPresent(RequestMapping.class)) {
 			return;
@@ -246,13 +259,13 @@ public class SpringMvcContract extends Contract.BaseContract
 		// headers
 		parseHeaders(data, method, methodMapping);
 
-		data.indexToExpander(new LinkedHashMap<Integer, Param.Expander>());
+		data.indexToExpander(new LinkedHashMap<>());
 	}
 
 	private String resolve(String value) {
 		if (StringUtils.hasText(value)
-				&& this.resourceLoader instanceof ConfigurableApplicationContext) {
-			return ((ConfigurableApplicationContext) this.resourceLoader).getEnvironment()
+				&& resourceLoader instanceof ConfigurableApplicationContext) {
+			return ((ConfigurableApplicationContext) resourceLoader).getEnvironment()
 					.resolvePlaceholders(value);
 		}
 		return value;
@@ -278,9 +291,9 @@ public class SpringMvcContract extends Contract.BaseContract
 
 		AnnotatedParameterProcessor.AnnotatedParameterContext context = new SimpleAnnotatedParameterContext(
 				data, paramIndex);
-		Method method = this.processedMethods.get(data.configKey());
+		Method method = processedMethods.get(data.configKey());
 		for (Annotation parameterAnnotation : annotations) {
-			AnnotatedParameterProcessor processor = this.annotatedArgumentProcessors
+			AnnotatedParameterProcessor processor = annotatedArgumentProcessors
 					.get(parameterAnnotation.annotationType());
 			if (processor != null) {
 				Annotation processParameterAnnotation;
@@ -293,11 +306,11 @@ public class SpringMvcContract extends Contract.BaseContract
 			}
 		}
 
-		if (isHttpAnnotation && data.indexToExpander().get(paramIndex) == null) {
+		if (!isMultipartFormData(data) && isHttpAnnotation
+				&& data.indexToExpander().get(paramIndex) == null) {
 			TypeDescriptor typeDescriptor = createTypeDescriptor(method, paramIndex);
-			if (this.conversionService.canConvert(typeDescriptor,
-					STRING_TYPE_DESCRIPTOR)) {
-				Param.Expander expander = this.convertingExpanderFactory
+			if (conversionService.canConvert(typeDescriptor, STRING_TYPE_DESCRIPTOR)) {
+				Param.Expander expander = convertingExpanderFactory
 						.getExpander(typeDescriptor);
 				if (expander != null) {
 					data.indexToExpander().put(paramIndex, expander);
@@ -390,6 +403,24 @@ public class SpringMvcContract extends Contract.BaseContract
 				&& parameterTypes != null && parameterTypes.length > parameterIndex;
 	}
 
+	private boolean isMultipartFormData(MethodMetadata data) {
+		Collection<String> contentTypes = data.template().headers()
+				.get(HttpEncoding.CONTENT_TYPE);
+
+		if (contentTypes != null && !contentTypes.isEmpty()) {
+			String type = contentTypes.iterator().next();
+			try {
+				return Objects.equals(MediaType.valueOf(type),
+						MediaType.MULTIPART_FORM_DATA);
+			}
+			catch (InvalidMediaTypeException ignored) {
+				return false;
+			}
+		}
+
+		return false;
+	}
+
 	/**
 	 * @deprecated Not used internally anymore. Will be removed in the future.
 	 */
@@ -404,7 +435,7 @@ public class SpringMvcContract extends Contract.BaseContract
 
 		@Override
 		public String expand(Object value) {
-			return this.conversionService.convert(value, String.class);
+			return conversionService.convert(value, String.class);
 		}
 
 	}
@@ -419,7 +450,7 @@ public class SpringMvcContract extends Contract.BaseContract
 
 		Param.Expander getExpander(TypeDescriptor typeDescriptor) {
 			return value -> {
-				Object converted = this.conversionService.convert(value, typeDescriptor,
+				Object converted = conversionService.convert(value, typeDescriptor,
 						STRING_TYPE_DESCRIPTOR);
 				return (String) converted;
 			};
@@ -442,17 +473,17 @@ public class SpringMvcContract extends Contract.BaseContract
 
 		@Override
 		public MethodMetadata getMethodMetadata() {
-			return this.methodMetadata;
+			return methodMetadata;
 		}
 
 		@Override
 		public int getParameterIndex() {
-			return this.parameterIndex;
+			return parameterIndex;
 		}
 
 		@Override
 		public void setParameterName(String name) {
-			nameParam(this.methodMetadata, name, this.parameterIndex);
+			nameParam(methodMetadata, name, parameterIndex);
 		}
 
 		@Override

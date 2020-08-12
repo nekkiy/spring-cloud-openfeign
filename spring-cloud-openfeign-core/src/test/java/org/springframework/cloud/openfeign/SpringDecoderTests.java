@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2019 the original author or authors.
+ * Copyright 2013-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -133,7 +133,7 @@ public class SpringDecoderTests extends FeignClientFactoryBean {
 	public void testResponseEntityVoid() {
 		ResponseEntity<Void> response = testClient().getHelloVoid();
 		assertThat(response).as("response was null").isNotNull();
-		List<String> headerVals = response.getHeaders().get("X-test-header");
+		List<String> headerVals = response.getHeaders().get("x-test-header");
 		assertThat(headerVals).as("headerVals was null").isNotNull();
 		assertThat(headerVals.size()).as("headerVals size was wrong").isEqualTo(1);
 		String header = headerVals.get(0);
